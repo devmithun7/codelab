@@ -1,0 +1,26 @@
+{
+  "environment": "web",
+  "format": "html",
+  "prefix": "https://storage.googleapis.com",
+  "mainga": "UA-49880327-14",
+  "updated": "2026-01-10T17:02:54-05:00",
+  "id": "data-engineering-excel-validation",
+  "duration": 53,
+  "title": "Data Engineering Task - Excel Data Validation \u0026 Vendor Transformation",
+  "summary": "Excel Data Validation and Vendor Transformation Pipeline - Client Onboarding Project",
+  "source": "codelab.md",
+  "theme": "",
+  "status": [
+    "published"
+  ],
+  "category": [
+    "data-engineering",
+    "python",
+    "validation"
+  ],
+  "tags": [
+    "python"
+  ],
+  "feedback": "https://github.com/your-repo/issues",
+  "url": "data-engineering-excel-validation"
+}

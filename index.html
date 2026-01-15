@@ -1,0 +1,1190 @@
+
+<!doctype html>
+
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, minimum-scale=1.0, initial-scale=1.0, user-scalable=yes">
+  <meta name="theme-color" content="#4F7DC9">
+  <meta charset="UTF-8">
+  <title>Data Engineering Task - Excel Data Validation &amp; Vendor Transformation</title>
+  <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Source+Code+Pro:400|Roboto:400,300,400italic,500,700|Roboto+Mono">
+  <link rel="stylesheet" href="//fonts.googleapis.com/icon?family=Material+Icons">
+  <link rel="stylesheet" href="https://storage.googleapis.com/claat-public/codelab-elements.css">
+  <style>
+    .success {
+      color: #1e8e3e;
+    }
+    .error {
+      color: red;
+    }
+  </style>
+</head>
+<body>
+  <google-codelab-analytics gaid="UA-49880327-14" ga4id=""></google-codelab-analytics>
+  <google-codelab codelab-gaid=""
+                  codelab-ga4id=""
+                  id="data-engineering-excel-validation"
+                  title="Data Engineering Task - Excel Data Validation &amp; Vendor Transformation"
+                  environment="web"
+                  feedback-link="https://github.com/your-repo/issues">
+    
+      <google-codelab-step label="Overview" duration="3">
+        <p>A Python-based data validation and transformation pipeline that validates input Excel data against Pydantic schemas and transforms it into Vendor output format with comprehensive error logging and email reporting.</p>
+<h2 is-upgraded>Project Context</h2>
+<p>This project is a <strong>data migration and transformation pipeline</strong> designed to onboard a new client&#39;s constituent and donation data into the Vendor system. The client is transitioning from their legacy software system and needs their historical data properly formatted and validated before import.</p>
+<h2 is-upgraded>Business Context</h2>
+<p>The client organization manages relationships with constituents—individuals and companies who attend their events and make donations. This data is critical to their operations as it drives:</p>
+<ul>
+<li>Marketing outreach campaigns</li>
+<li>Fundraising initiatives</li>
+<li>Donor relationship management</li>
+<li>Event planning and engagement</li>
+</ul>
+<p>Negative : Any errors in the migration could impact the client&#39;s ability to effectively engage with their supporters.</p>
+<h2 is-upgraded>Project Objective</h2>
+<p>Transform three input spreadsheets exported from the client&#39;s legacy system into validated, Vendor-compatible output files that meet the following criteria:</p>
+<ol type="1">
+<li><strong>Data Accuracy</strong>: All constituent, email, and donation records are correctly mapped and transformed</li>
+<li><strong>Data Quality</strong>: Invalid or problematic records are identified, logged, and separated from clean data</li>
+<li><strong>Client Approval</strong>: Output files are ready for client review and sign-off before final import</li>
+<li><strong>Audit Trail</strong>: Comprehensive logging ensures transparency and allows for issue resolution</li>
+</ol>
+<h2 is-upgraded>Deliverables</h2>
+<p>This pipeline produces:</p>
+<ol type="1">
+<li><strong>Vendor Complete Output</strong>: All transformed records with validation status flags</li>
+<li><strong>Vendor Clean Records</strong>: Production-ready data containing only validated records</li>
+<li><strong>Validation Logs</strong>: Detailed error reports for any data quality issues requiring attention</li>
+<li><strong>Email Reports</strong>: Automated notifications with validation results and attached files</li>
+</ol>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Project Architecture" duration="5">
+        <h2 is-upgraded>Design Philosophy: Two-Phase Audit Approach</h2>
+<p>This project implements a <strong>two-phase audit architecture</strong> designed to efficiently catch data quality issues at different levels of granularity. This approach optimizes both computational resources and error detection.</p>
+<h2 is-upgraded>Phase 1: Metadata Validation (Schema Audit)</h2>
+<p><strong>Purpose</strong>: Detect schema drift and structural mismatches early</p>
+<p>This lightweight phase validates:</p>
+<ul>
+<li>Excel file structure (sheet names, file format)</li>
+<li>Column schema (required columns present, naming conventions)</li>
+<li>Basic data types (integers, strings, dates)</li>
+<li>Required field presence</li>
+</ul>
+<p><strong>Why First?</strong></p>
+<ul>
+<li><strong>Fast execution</strong>: Structural validation requires minimal compute resources</li>
+<li><strong>Fail-fast principle</strong>: Catches fundamental issues before expensive transformations</li>
+<li><strong>Schema drift detection</strong>: Identifies when client&#39;s export format has changed</li>
+<li><strong>Resource optimization</strong>: Prevents processing millions of records if structure is wrong</li>
+</ul>
+<p><strong>Performance</strong>: O(n) complexity where n = number of rows, but only validates structure</p>
+<h2 is-upgraded>Phase 2: Business Rules Validation (Field-Level Audit)</h2>
+<p><strong>Purpose</strong>: Enforce domain-specific business logic and data quality rules</p>
+<p>This comprehensive phase validates:</p>
+<ul>
+<li>Field-level business rules (email formats, required names for persons vs companies)</li>
+<li>Cross-field logic (constituent type determines required fields)</li>
+<li>Data relationships (referential integrity across sheets)</li>
+<li>Vendor-specific requirements (output format compliance)</li>
+</ul>
+<p><strong>Why Second?</strong></p>
+<ul>
+<li><strong>Computation-intensive</strong>: Validates each field against business rules</li>
+<li><strong>Transformation validation</strong>: Ensures combined data meets target system requirements</li>
+<li><strong>Data quality assurance</strong>: Catches semantic errors that pass structural validation</li>
+</ul>
+<p><strong>Performance</strong>: O(n × m) complexity where n = records, m = validation rules per record</p>
+<p>Positive : This two-phase approach ensures data quality at both input and output levels while optimizing performance.</p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Testing &amp; Validation" duration="12">
+        <p>This section documents all validation checks and tests performed during the data processing workflow, including detailed column-level validations and business rules.</p>
+<h2 is-upgraded>Phase 1: Metadata Validation Tests</h2>
+<h3 is-upgraded>File Structure Validation</h3>
+<ul>
+<li><strong>Test</strong>: Excel file contains exactly 3 required sheets</li>
+<li><strong>Required sheets</strong>: &#34;Input Constituents&#34;, &#34;Input Emails&#34;, &#34;Input Donation History&#34;</li>
+<li><strong>Pass Criteria</strong>: All 3 sheets exist with exact name matches (case-sensitive)</li>
+<li><strong>Failure Impact</strong>: Immediate workflow termination, email notification sent</li>
+</ul>
+<h3 is-upgraded>Input Constituents Sheet - Column Validations</h3>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Column Name</p>
+</td><td colspan="1" rowspan="1"><p>Validation Rules</p>
+</td><td colspan="1" rowspan="1"><p>Cleaning Operations</p>
+</td><td colspan="1" rowspan="1"><p>Business Rules</p>
+</td><td colspan="1" rowspan="1"><p>Data Type</p>
+</td><td colspan="1" rowspan="1"><p>Required</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Patron ID</strong></p>
+</td><td colspan="1" rowspan="1"><p>Must be positive integer &gt; 0</p>
+</td><td colspan="1" rowspan="1"><p>None</p>
+</td><td colspan="1" rowspan="1"><p>Unique identifier for each constituent</p>
+</td><td colspan="1" rowspan="1"><p>Integer</p>
+</td><td colspan="1" rowspan="1"><p>Yes</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>First Name</strong></p>
+</td><td colspan="1" rowspan="1"><p>1-100 chars after cleaning</p>
+</td><td colspan="1" rowspan="1"><p>Title case, remove special chars (except - ‘), trim spaces</p>
+</td><td colspan="1" rowspan="1"><p>Required if constituent is a Person</p>
+</td><td colspan="1" rowspan="1"><p>String</p>
+</td><td colspan="1" rowspan="1"><p>Conditional</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Last Name</strong></p>
+</td><td colspan="1" rowspan="1"><p>1-100 chars after cleaning</p>
+</td><td colspan="1" rowspan="1"><p>Title case, remove special chars (except - ‘), trim spaces</p>
+</td><td colspan="1" rowspan="1"><p>Required if constituent is a Person</p>
+</td><td colspan="1" rowspan="1"><p>String</p>
+</td><td colspan="1" rowspan="1"><p>Conditional</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Date Entered</strong></p>
+</td><td colspan="1" rowspan="1"><p>Valid date format, parseable</p>
+</td><td colspan="1" rowspan="1"><p>Standardized to YYYY-MM-DD HH:MM:SS</p>
+</td><td colspan="1" rowspan="1"><p>Record creation timestamp</p>
+</td><td colspan="1" rowspan="1"><p>DateTime</p>
+</td><td colspan="1" rowspan="1"><p>No</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Primary Email</strong></p>
+</td><td colspan="1" rowspan="1"><p>Valid email format (@, domain)</p>
+</td><td colspan="1" rowspan="1"><p>Lowercase, remove spaces, validate format</p>
+</td><td colspan="1" rowspan="1"><p>Used as CB Email 1 if no emails in Email sheet</p>
+</td><td colspan="1" rowspan="1"><p>String</p>
+</td><td colspan="1" rowspan="1"><p>No</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Company</strong></p>
+</td><td colspan="1" rowspan="1"><p>Trimmed whitespace</p>
+</td><td colspan="1" rowspan="1"><p>Title case, preserve abbreviations (LLC, INC), standardize ‘&amp;&#39;</p>
+</td><td colspan="1" rowspan="1"><p>If populated, constituent type = &#34;Company&#34;</p>
+</td><td colspan="1" rowspan="1"><p>String</p>
+</td><td colspan="1" rowspan="1"><p>Conditional</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Salutation</strong></p>
+</td><td colspan="1" rowspan="1"><p>Must match standard values</p>
+</td><td colspan="1" rowspan="1"><p>Standardize to: Mr., Mrs., Ms., Dr.</p>
+</td><td colspan="1" rowspan="1"><p>Mapped to CB Title field</p>
+</td><td colspan="1" rowspan="1"><p>String</p>
+</td><td colspan="1" rowspan="1"><p>No</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Title</strong></p>
+</td><td colspan="1" rowspan="1"><p>Trimmed whitespace</p>
+</td><td colspan="1" rowspan="1"><p>Trim spaces</p>
+</td><td colspan="1" rowspan="1"><p>Job title - used in Background Information</p>
+</td><td colspan="1" rowspan="1"><p>String</p>
+</td><td colspan="1" rowspan="1"><p>No</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Tags</strong></p>
+</td><td colspan="1" rowspan="1"><p>Comma-separated values</p>
+</td><td colspan="1" rowspan="1"><p>Remove duplicates, trim each tag, consistent separators</p>
+</td><td colspan="1" rowspan="1"><p>Mapped to CB Tags field</p>
+</td><td colspan="1" rowspan="1"><p>String</p>
+</td><td colspan="1" rowspan="1"><p>No</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Gender</strong></p>
+</td><td colspan="1" rowspan="1"><p>Trimmed whitespace</p>
+</td><td colspan="1" rowspan="1"><p>Trim spaces</p>
+</td><td colspan="1" rowspan="1"><p>Contains marital status data</p>
+</td><td colspan="1" rowspan="1"><p>String</p>
+</td><td colspan="1" rowspan="1"><p>No</p>
+</td></tr>
+</table>
+<p><strong>Business Logic</strong>:</p>
+<ul>
+<li>If <code>Company</code> has value → Constituent Type = &#34;Company&#34; (Company Name REQUIRED)</li>
+<li>If <code>Company</code> empty AND (<code>First Name</code> OR <code>Last Name</code> exists) → Type = &#34;Person&#34; (Both names REQUIRED)</li>
+<li>Background Info = Combination of <code>Title</code> and <code>Marital Status</code> fields</li>
+</ul>
+<h3 is-upgraded>Input Emails Sheet - Column Validations</h3>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Column Name</p>
+</td><td colspan="1" rowspan="1"><p>Validation Rules</p>
+</td><td colspan="1" rowspan="1"><p>Cleaning Operations</p>
+</td><td colspan="1" rowspan="1"><p>Business Rules</p>
+</td><td colspan="1" rowspan="1"><p>Data Type</p>
+</td><td colspan="1" rowspan="1"><p>Required</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Patron ID</strong></p>
+</td><td colspan="1" rowspan="1"><p>Must be positive integer &gt; 0</p>
+</td><td colspan="1" rowspan="1"><p>None</p>
+</td><td colspan="1" rowspan="1"><p>Links to constituent record</p>
+</td><td colspan="1" rowspan="1"><p>Integer</p>
+</td><td colspan="1" rowspan="1"><p>Yes</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Email</strong></p>
+</td><td colspan="1" rowspan="1"><p>Valid email format (@, domain)</p>
+</td><td colspan="1" rowspan="1"><p>Lowercase, remove spaces, remove invalid special chars</p>
+</td><td colspan="1" rowspan="1"><p>Up to 2 emails per patron mapped to CB Email 1 &amp; 2</p>
+</td><td colspan="1" rowspan="1"><p>String</p>
+</td><td colspan="1" rowspan="1"><p>No</p>
+</td></tr>
+</table>
+<p><strong>Business Logic - Email Priority</strong>:</p>
+<p><strong>When constituent has MORE THAN 3 emails</strong> in Input Emails sheet:</p>
+<ul>
+<li>CB Email 1 → Primary Email from Input Constituents sheet</li>
+<li>CB Email 2 → First email from Input Emails sheet (earliest row)</li>
+</ul>
+<p><strong>When constituent has 3 OR FEWER emails</strong>:</p>
+<ul>
+<li>CB Email 1 → First email from Input Emails sheet (or Primary Email if none)</li>
+<li>CB Email 2 → Second email from Input Emails sheet</li>
+</ul>
+<p>Positive : This priority logic ensures that when a constituent has many emails, their primary email (which is likely the most important one) is always used as CB Email 1, while still capturing additional emails from the Input Emails sheet.</p>
+<h3 is-upgraded>Input Donation History Sheet - Column Validations</h3>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Column Name</p>
+</td><td colspan="1" rowspan="1"><p>Validation Rules</p>
+</td><td colspan="1" rowspan="1"><p>Cleaning Operations</p>
+</td><td colspan="1" rowspan="1"><p>Business Rules</p>
+</td><td colspan="1" rowspan="1"><p>Data Type</p>
+</td><td colspan="1" rowspan="1"><p>Required</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Patron ID</strong></p>
+</td><td colspan="1" rowspan="1"><p>Must be positive integer &gt; 0</p>
+</td><td colspan="1" rowspan="1"><p>None</p>
+</td><td colspan="1" rowspan="1"><p>Links to constituent record</p>
+</td><td colspan="1" rowspan="1"><p>Integer</p>
+</td><td colspan="1" rowspan="1"><p>Yes</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Donation Amount</strong></p>
+</td><td colspan="1" rowspan="1"><p>Numeric value &gt;= 0</p>
+</td><td colspan="1" rowspan="1"><p>None</p>
+</td><td colspan="1" rowspan="1"><p>Used for lifetime total and recent amount</p>
+</td><td colspan="1" rowspan="1"><p>Decimal</p>
+</td><td colspan="1" rowspan="1"><p>No</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Donation Date</strong></p>
+</td><td colspan="1" rowspan="1"><p>Valid date format, parseable</p>
+</td><td colspan="1" rowspan="1"><p>Standardize to YYYY-MM-DD HH:MM:SS</p>
+</td><td colspan="1" rowspan="1"><p>Determines most recent donation</p>
+</td><td colspan="1" rowspan="1"><p>DateTime</p>
+</td><td colspan="1" rowspan="1"><p>No</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Payment Method</strong></p>
+</td><td colspan="1" rowspan="1"><p>Trimmed whitespace</p>
+</td><td colspan="1" rowspan="1"><p>Standardize to standard values (Credit Card, Check, etc.)</p>
+</td><td colspan="1" rowspan="1"><p>Payment type tracking</p>
+</td><td colspan="1" rowspan="1"><p>String</p>
+</td><td colspan="1" rowspan="1"><p>No</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Campaign</strong></p>
+</td><td colspan="1" rowspan="1"><p>Trimmed whitespace</p>
+</td><td colspan="1" rowspan="1"><p>Convert to title case</p>
+</td><td colspan="1" rowspan="1"><p>Campaign attribution</p>
+</td><td colspan="1" rowspan="1"><p>String</p>
+</td><td colspan="1" rowspan="1"><p>No</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Status</strong></p>
+</td><td colspan="1" rowspan="1"><p>Trimmed whitespace</p>
+</td><td colspan="1" rowspan="1"><p>Standardize to: Paid, Pending, Failed, Cancelled, Refunded</p>
+</td><td colspan="1" rowspan="1"><p>Donation status</p>
+</td><td colspan="1" rowspan="1"><p>String</p>
+</td><td colspan="1" rowspan="1"><p>No</p>
+</td></tr>
+</table>
+<p><strong>Business Logic</strong>:</p>
+<ul>
+<li><strong>CB Lifetime Donation Amount</strong> = SUM(all Donation Amounts for Patron ID)</li>
+<li><strong>CB Most Recent Donation Date</strong> = MAX(Donation Date for Patron ID)</li>
+<li><strong>CB Most Recent Donation Amount</strong> = Amount of donation with most recent date</li>
+<li>If no donations found → All donation fields empty</li>
+</ul>
+<h2 is-upgraded>Phase 2: Business Rules Validation (Output)</h2>
+<p>After transformation, each output record is validated against Vendor-specific business rules:</p>
+<h3 is-upgraded>Output Field Validations</h3>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Output Column</p>
+</td><td colspan="1" rowspan="1"><p>Validation Rule</p>
+</td><td colspan="1" rowspan="1"><p>Business Impact</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>CB Constituent ID</strong></p>
+</td><td colspan="1" rowspan="1"><p>Must not be null/empty</p>
+</td><td colspan="1" rowspan="1"><p>Record rejected if missing</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>CB Constituent Type</strong></p>
+</td><td colspan="1" rowspan="1"><p>Must be &#34;Person&#34; or &#34;Company&#34;</p>
+</td><td colspan="1" rowspan="1"><p>Determines required name fields</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>CB First Name</strong></p>
+</td><td colspan="1" rowspan="1"><p>Required if Type=&#34;Person&#34;</p>
+</td><td colspan="1" rowspan="1"><p>Person records rejected if empty</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>CB Last Name</strong></p>
+</td><td colspan="1" rowspan="1"><p>Required if Type=&#34;Person&#34;</p>
+</td><td colspan="1" rowspan="1"><p>Person records rejected if empty</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>CB Company Name</strong></p>
+</td><td colspan="1" rowspan="1"><p>Required if Type=&#34;Company&#34;</p>
+</td><td colspan="1" rowspan="1"><p>Company records rejected if empty</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>CB Created At</strong></p>
+</td><td colspan="1" rowspan="1"><p>Valid timestamp or empty</p>
+</td><td colspan="1" rowspan="1"><p>Standardized to YYYY-MM-DD HH:MM:SS</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>CB Email 1</strong></p>
+</td><td colspan="1" rowspan="1"><p>Valid email format if present</p>
+</td><td colspan="1" rowspan="1"><p>Optional - empty allowed</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>CB Email 2</strong></p>
+</td><td colspan="1" rowspan="1"><p>Valid email format if present</p>
+</td><td colspan="1" rowspan="1"><p>Optional - empty allowed</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>CB Title</strong></p>
+</td><td colspan="1" rowspan="1"><p>Any string value</p>
+</td><td colspan="1" rowspan="1"><p>Optional - mapped from Salutation</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>CB Tags</strong></p>
+</td><td colspan="1" rowspan="1"><p>Any string value</p>
+</td><td colspan="1" rowspan="1"><p>Optional - comma-separated values</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>CB Background Information</strong></p>
+</td><td colspan="1" rowspan="1"><p>Formatted string</p>
+</td><td colspan="1" rowspan="1"><p>Auto-generated from Title + Marital Status</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>CB Lifetime Donation Amount</strong></p>
+</td><td colspan="1" rowspan="1"><p>Numeric or empty</p>
+</td><td colspan="1" rowspan="1"><p>Sum of all donations</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>CB Most Recent Donation Date</strong></p>
+</td><td colspan="1" rowspan="1"><p>Valid date or empty</p>
+</td><td colspan="1" rowspan="1"><p>Latest donation timestamp</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>CB Most Recent Donation Amount</strong></p>
+</td><td colspan="1" rowspan="1"><p>Numeric or empty</p>
+</td><td colspan="1" rowspan="1"><p>Amount of latest donation</p>
+</td></tr>
+</table>
+<h3 is-upgraded>Data Cleaning &amp; Standardization Rules</h3>
+<p>Applied systematically before validation to ensure data quality:</p>
+<p><strong>1. Name Cleaning (First Name, Last Name)</strong></p>
+<ul>
+<li>Convert to title case (e.g., &#34;JOHN&#34; → &#34;John&#34;, &#34;mary&#34; → &#34;Mary&#34;)</li>
+<li>Remove special characters except hyphens and apostrophes</li>
+<li>Handle multi-part names properly (e.g., &#34;O&#39;Brien&#34;, &#34;Mary-Jane&#34;)</li>
+<li>Remove excessive whitespace</li>
+<li>Examples: <ul>
+<li>&#34;john123smith!&#34; → &#34;Johnsmith&#34;</li>
+<li>&#34;MARY-JANE&#34; → &#34;Mary-Jane&#34;</li>
+<li>&#34;o&#39;brien&#34; → &#34;O&#39;Brien&#34;</li>
+</ul>
+</li>
+</ul>
+<p><strong>2. Email Standardization (Primary Email, Email fields)</strong></p>
+<ul>
+<li>Convert to lowercase</li>
+<li>Remove ALL whitespace</li>
+<li>Validate basic format (local@domain.tld)</li>
+<li>Remove invalid special characters</li>
+<li>Keep only: @ . _ - + in local part</li>
+<li>Keep only: @ . - in domain</li>
+<li>Examples: <ul>
+<li>&#34;John.Doe@Example.COM&#34; → &#34;john.doe@example.com&#34;</li>
+<li>&#34;user @domain .com&#34; → &#34;user@domain.com&#34;</li>
+</ul>
+</li>
+</ul>
+<p><strong>3. Title/Salutation Standardization</strong></p>
+<ul>
+<li>Map common variations to standard values</li>
+<li>Accepted values: &#34;Mr.&#34;, &#34;Mrs.&#34;, &#34;Ms.&#34;, &#34;Dr.&#34;</li>
+<li>Mappings: <ul>
+<li>&#34;mr&#34;, &#34;mister&#34; → &#34;Mr.&#34;</li>
+<li>&#34;mrs&#34; → &#34;Mrs.&#34;</li>
+<li>&#34;ms&#34;, &#34;miss&#34; → &#34;Ms.&#34;</li>
+<li>&#34;dr&#34;, &#34;doctor&#34;, &#34;prof&#34;, &#34;professor&#34; → &#34;Dr.&#34;</li>
+</ul>
+</li>
+</ul>
+<p><strong>4. Company Name Standardization</strong></p>
+<ul>
+<li>Apply title case to each word</li>
+<li>Preserve business abbreviations in uppercase (LLC, INC, CORP, LTD, USA)</li>
+<li>Standardize &#34;and&#34; to &#34;&amp;&#34;</li>
+<li>Remove excessive whitespace</li>
+<li>Keep special characters (., &amp;) common in company names</li>
+<li>Examples: <ul>
+<li>&#34;ACME CORP&#34; → &#34;Acme CORP&#34;</li>
+<li>&#34;Smith and Jones LLC&#34; → &#34;Smith &amp; Jones LLC&#34;</li>
+</ul>
+</li>
+</ul>
+<p><strong>5. Tags Cleaning</strong></p>
+<ul>
+<li>Split by comma</li>
+<li>Trim whitespace from each tag</li>
+<li>Remove duplicate tags</li>
+<li>Rejoin with consistent separator (&#34;, &#34;)</li>
+<li>Example: &#34;Tag1, Tag1, Tag2 , Tag3&#34; → &#34;Tag1, Tag2, Tag3&#34;</li>
+</ul>
+<p><strong>6. Payment Method Standardization</strong></p>
+<ul>
+<li>Map common variations: <ul>
+<li>&#34;credit card&#34;, &#34;cc&#34;, &#34;creditcard&#34; → &#34;Credit Card&#34;</li>
+<li>&#34;check&#34;, &#34;cheque&#34; → &#34;Check&#34;</li>
+<li>&#34;paypal&#34; → &#34;PayPal&#34;</li>
+<li>&#34;bank transfer&#34;, &#34;wire transfer&#34; → &#34;Bank Transfer&#34; / &#34;Wire Transfer&#34;</li>
+</ul>
+</li>
+</ul>
+<p><strong>7. Campaign Name Standardization</strong></p>
+<ul>
+<li>Convert to title case</li>
+<li>Example: &#34;summer campaign 2024&#34; → &#34;Summer Campaign 2024&#34;</li>
+</ul>
+<p><strong>8. Status Standardization</strong></p>
+<ul>
+<li>Map common variations: <ul>
+<li>&#34;paid&#34;, &#34;complete&#34;, &#34;success&#34; → &#34;Paid&#34;</li>
+<li>&#34;pending&#34;, &#34;processing&#34; → &#34;Pending&#34;</li>
+<li>&#34;failed&#34;, &#34;error&#34; → &#34;Failed&#34;</li>
+<li>&#34;cancelled&#34;, &#34;canceled&#34; → &#34;Cancelled&#34;</li>
+</ul>
+</li>
+</ul>
+<p><strong>9. Timestamp Standardization</strong></p>
+<ul>
+<li>Parse various date formats</li>
+<li>Standardize to <code>YYYY-MM-DD HH:MM:SS</code> format</li>
+<li>Handle dates without time (default to 00:00:00)</li>
+<li>Examples: <ul>
+<li>&#34;2024-01-15&#34; → &#34;2024-01-15 00:00:00&#34;</li>
+<li>&#34;01/15/2024 3:30 PM&#34; → &#34;2024-01-15 15:30:00&#34;</li>
+</ul>
+</li>
+</ul>
+<p><strong>10. Background Information Formatting</strong></p>
+<ul>
+<li>Combine Job Title and Marital Status</li>
+<li>Format: &#34;Job Title: [title]; Marital Status: [status]&#34;</li>
+<li>Treat &#34;Unknown&#34; marital status as blank/not present</li>
+<li>Rules: <ul>
+<li>Both present: &#34;Job Title: Professor; Marital Status: Married&#34;</li>
+<li>Only title: &#34;Job Title: Professor&#34;</li>
+<li>Only status: &#34;Marital Status: Married&#34;</li>
+<li>&#34;Unknown&#34; status: Treated as blank</li>
+<li>Neither present: Empty string</li>
+</ul>
+</li>
+</ul>
+<p><strong>11. General Text Field Cleaning</strong></p>
+<ul>
+<li>Trim leading/trailing whitespace</li>
+<li>Convert &#34;nan&#34; string to empty string</li>
+<li>Remove multiple consecutive spaces</li>
+<li>Consistent empty value handling</li>
+</ul>
+<h2 is-upgraded>API Integration &amp; Validation</h2>
+<p>The system includes API connectivity testing and schema validation to ensure external data sources meet expected formats.</p>
+<h3 is-upgraded>API Endpoint Tested</h3>
+<p><strong>Tags API</strong>: <code>https://6719768f7fc4c5ff8f4d84f1.mockapi.io/api/v1/tags</code></p>
+<h3 is-upgraded>Expected API Schema</h3>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Field Name</p>
+</td><td colspan="1" rowspan="1"><p>Data Type</p>
+</td><td colspan="1" rowspan="1"><p>Required</p>
+</td><td colspan="1" rowspan="1"><p>Validation Rules</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>id</strong></p>
+</td><td colspan="1" rowspan="1"><p>string</p>
+</td><td colspan="1" rowspan="1"><p>Yes</p>
+</td><td colspan="1" rowspan="1"><p>Cannot be empty</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>name</strong></p>
+</td><td colspan="1" rowspan="1"><p>string</p>
+</td><td colspan="1" rowspan="1"><p>Yes</p>
+</td><td colspan="1" rowspan="1"><p>Cannot be empty or whitespace only</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>mapped_name</strong></p>
+</td><td colspan="1" rowspan="1"><p>string</p>
+</td><td colspan="1" rowspan="1"><p>Yes</p>
+</td><td colspan="1" rowspan="1"><p>Cannot be empty or whitespace only</p>
+</td></tr>
+</table>
+<h3 is-upgraded>API Validation Process</h3>
+<p><strong>Step 1: Connection Test</strong></p>
+<ul>
+<li>Attempts HTTP GET request to API endpoint</li>
+<li>Timeout: 10 seconds</li>
+<li>Validates HTTP 200 status code</li>
+</ul>
+<p><strong>Step 2: Response Format Validation</strong></p>
+<ul>
+<li>Checks if response is valid JSON</li>
+<li>Validates response is a list/array</li>
+<li>Counts total records returned</li>
+</ul>
+<p><strong>Step 3: Schema Validation</strong></p>
+<ul>
+<li>Each record validated against Pydantic model</li>
+<li>Checks for required fields (id, name, mapped_name)</li>
+<li>Validates data types match expectations</li>
+<li>Ensures no empty or whitespace-only values</li>
+</ul>
+<p><strong>Step 4: Results Summary</strong></p>
+<ul>
+<li>Total records processed</li>
+<li>Valid records count</li>
+<li>Invalid records count</li>
+<li>Success rate calculation</li>
+<li>Detailed error logging for failures</li>
+</ul>
+<h3 is-upgraded>Sample API Response</h3>
+<pre><code language="language-json" class="language-json">[
+  {
+    &#34;name&#34;: &#34;Board Member&#34;,
+    &#34;mapped_name&#34;: &#34;Board Member&#34;,
+    &#34;id&#34;: &#34;7&#34;
+  },
+  {
+    &#34;name&#34;: &#34;Major Donor 2021&#34;,
+    &#34;mapped_name&#34;: &#34;Major Donor 2021&#34;,
+    &#34;id&#34;: &#34;6&#34;
+  }
+]
+</code></pre>
+<h3 is-upgraded>Testing API Validation</h3>
+<p>Run the API validation test:</p>
+<pre><code language="language-bash" class="language-bash">uv run python test_api_validation.py
+</code></pre>
+<p><strong>Expected Output:</strong></p>
+<pre><code>API VALIDATION TEST
+======================================================================
+Testing API connection: https://6719768f7fc4c5ff8f4d84f1.mockapi.io/api/v1/tags
+API Response: HTTP 200 - Success
+API returned 7 records
+
+API Validation Summary:
+  - Total records: 7
+  - Valid records: 7
+  - Invalid records: 0
+
+API validation passed - All records match expected schema
+</code></pre>
+<h3 is-upgraded>Error Handling</h3>
+<p><strong>Connection Errors:</strong></p>
+<ul>
+<li>Timeout after 10 seconds</li>
+<li>Network connectivity issues</li>
+<li>Invalid URL or endpoint</li>
+</ul>
+<p><strong>Validation Errors:</strong></p>
+<ul>
+<li>Missing required fields</li>
+<li>Empty or whitespace-only values</li>
+<li>Incorrect data types</li>
+<li>Invalid JSON response format</li>
+</ul>
+<p>All errors are logged with detailed information for troubleshooting.</p>
+<p>Negative : API validation failures do not stop the main data processing workflow. They are logged for informational purposes and system health monitoring.</p>
+<h3 is-upgraded>Validation Failure Handling</h3>
+<p><strong>Phase 1 Failures</strong>:</p>
+<ul>
+<li>Workflow stops immediately</li>
+<li>No data transformation occurs</li>
+<li>Email sent with <code>validation_errors_[timestamp].log</code></li>
+<li>User must fix structural issues and re-run</li>
+</ul>
+<p><strong>Phase 2 Failures</strong>:</p>
+<ul>
+<li>Invalid records logged with full details</li>
+<li>Valid and invalid records separated</li>
+<li>Both outputs generated (complete + clean)</li>
+<li>Email sent with both files + error log</li>
+<li>Client can proceed with valid records while resolving issues</li>
+</ul>
+<p>Positive : All validations are automatically executed with detailed logging. Each failed record includes the full record data and specific validation errors.</p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Installation" duration="5">
+        <h2 is-upgraded>Clone the Repository</h2>
+<pre><code language="language-bash" class="language-bash">git clone &lt;repository-url&gt;
+cd data_engineering_task
+</code></pre>
+<h2 is-upgraded>Install uv Package Manager</h2>
+<p><strong>Windows (PowerShell):</strong></p>
+<pre><code language="language-powershell" class="language-powershell">powershell -c &#34;irm https://astral.sh/uv/install.ps1 | iex&#34;
+</code></pre>
+<p><strong>macOS/Linux:</strong></p>
+<pre><code language="language-bash" class="language-bash">curl -LsSf https://astral.sh/uv/install.sh | sh
+</code></pre>
+<h2 is-upgraded>Install Dependencies</h2>
+<pre><code language="language-bash" class="language-bash">uv sync
+</code></pre>
+<p>This command will automatically install all required dependencies:</p>
+<ul>
+<li>pandas &gt;= 2.0.0</li>
+<li>pydantic &gt;= 2.0.0</li>
+<li>openpyxl &gt;= 3.0.0</li>
+<li>python-dotenv &gt;= 1.0.0</li>
+</ul>
+<p>Positive : The uv sync command creates a virtual environment and installs dependencies automatically!</p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Configuration" duration="7">
+<h2 is-upgraded>Create .env File</h2>
+<p>Create a new file named <code>.env</code> in your project root (do not commit it to source control):</p>
+<p><strong>Windows:</strong></p>
+<pre><code language="language-cmd" class="language-cmd">type nul &gt; .env
+</code></pre>
+<p><strong>macOS/Linux:</strong></p>
+<pre><code language="language-bash" class="language-bash">touch .env
+</code></pre>
+<h2 is-upgraded>Gmail App Password Setup</h2>
+<p>Negative : Never use your regular Gmail password! You must create an App Password.</p>
+<p><strong>Steps:</strong></p>
+<ol type="1">
+<li>Go to Google Account Security</li>
+<li>Ensure 2-Step Verification is enabled</li>
+<li>Click on App passwords</li>
+<li>Select Mail and your device type</li>
+<li>Click Generate</li>
+<li>Copy the 16-character password</li>
+</ol>
+<h2 is-upgraded>Configure Environment Variables</h2>
+<p>Open the <code>.env</code> file and add:</p>
+<pre><code language="language-env" class="language-env"># Email Configuration for Automated Reporting
+SENDER_EMAIL=your-email@gmail.com
+SENDER_PASSWORD=xxxx xxxx xxxx xxxx
+RECIPIENT_EMAIL=recipient-email@example.com
+
+# SMTP Configuration (Gmail defaults)
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=465
+
+# API Configuration
+API_URL=https://6719768f7fc4c5ff8f4d84f1.mockapi.io/api/v1/tags
+
+# Google Drive Configuration
+# Use the full Google Sheets URL; the script will extract the file ID.
+GDRIVE_URL=https://docs.google.com/spreadsheets/d/&lt;FILE_ID&gt;/edit
+</code></pre>
+<p><strong>Replace:</strong></p>
+<ul>
+<li><code>your-email@gmail.com</code> - Your Gmail address</li>
+<li><code>xxxx xxxx xxxx xxxx</code> - Your 16-character App Password</li>
+<li><code>recipient-email@example.com</code> - Where reports should be sent</li>
+</ul>
+<p>Positive : Always add .env to your .gitignore to keep credentials secure!</p>
+<p><strong>Google Drive Setup:</strong></p>
+<ol type="1">
+<li>Open the Google Sheet</li>
+<li>Click Share - set Anyone with the link to Viewer</li>
+<li>Copy the full URL into <code>GDRIVE_URL</code></li>
+</ol>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Usage" duration="7">
+        <h2 is-upgraded>Running the Pipeline</h2>
+<p>The pipeline is designed to run end-to-end with a single command. It processes your Excel file through both validation phases and generates all outputs automatically.</p>
+<h3 is-upgraded>Command</h3>
+<p>From your project directory, run:</p>
+<pre><code language="language-bash" class="language-bash">uv run python main.py
+</code></pre>
+<h3 is-upgraded>What Happens During Execution</h3>
+<p>The pipeline executes the following workflow:</p>
+<p><strong>Step 1: Initialization</strong></p>
+<ul>
+<li>Loads Excel file from configured path</li>
+<li>Checks email configuration from <code>.env</code> file</li>
+<li>Initializes logging systems</li>
+</ul>
+<p><strong>Step 2: Metadata Validation (Phase 1)</strong></p>
+<ul>
+<li>Validates file structure (3 required sheets)</li>
+<li>Checks all column schemas match requirements</li>
+<li>Validates basic data types using Pydantic models</li>
+<li>Converts NaN values to None for proper validation</li>
+<li><strong>Decision Point</strong>: If ANY errors → STOP and email log</li>
+</ul>
+<p><strong>Step 3: Data Loading (if Phase 1 passes)</strong></p>
+<ul>
+<li>Loads constituents DataFrame (e.g., 150 records)</li>
+<li>Loads emails DataFrame (e.g., 250 email records)</li>
+<li>Loads donation history DataFrame (e.g., 500 donation records)</li>
+</ul>
+<p><strong>Step 4: Data Cleaning &amp; Standardization</strong></p>
+<ul>
+<li><strong>Name Cleaning</strong>: Applies title case, removes special characters</li>
+<li><strong>Email Standardization</strong>: Converts to lowercase, removes spaces, validates format</li>
+<li><strong>Title/Salutation</strong>: Standardizes to Mr., Mrs., Ms., Dr.</li>
+<li><strong>Tags</strong>: Removes duplicates, ensures consistent formatting</li>
+<li><strong>Timestamps</strong>: Standardizes to YYYY-MM-DD HH:MM:SS format</li>
+<li><strong>Payment Methods/Status</strong>: Standardizes to consistent values</li>
+<li><strong>Whitespace</strong>: Trims all text fields, removes excessive spaces</li>
+<li><strong>Empty Values</strong>: Handles NaN and null values consistently</li>
+</ul>
+<p><strong>Step 5: Data Transformation</strong></p>
+<ul>
+<li>Combines data from 3 input sheets by Patron ID</li>
+<li>Determines constituent type (Person/Company)</li>
+<li>Maps fields to Vendor output schema</li>
+<li>Calculates donation aggregations (lifetime total, recent donation)</li>
+<li>Formats background information (Job Title + Marital Status)</li>
+</ul>
+<p><strong>Step 6: Business Rules Validation (Phase 2)</strong></p>
+<ul>
+<li>Validates each transformed record against Vendor requirements</li>
+<li>Checks constituent type-specific name requirements</li>
+<li>Validates email formats</li>
+<li>Logs any validation failures with full record details</li>
+</ul>
+<p><strong>Step 7: Output Generation</strong></p>
+<ul>
+<li>Creates timestamped output files</li>
+<li>Generates complete output (all records)</li>
+<li>Generates clean output (valid records only)</li>
+<li>Writes validation log with error details</li>
+</ul>
+<p><strong>Step 8: Email Notification</strong></p>
+<ul>
+<li>Sends email to configured recipient</li>
+<li>Attaches relevant files based on validation results</li>
+<li>Includes validation statistics in email body</li>
+</ul>
+<h2 is-upgraded>Console Output Walkthrough</h2>
+<p>The console provides real-time feedback on every step. Here&#39;s what you&#39;ll see:</p>
+<p><strong>Workflow Starts:</strong></p>
+<pre><code>Starting Data Processing Workflow
+============================================================
+STEP 1: Metadata Validation (Input Data)
+This step validates the structure and quality of input data.
+If ANY errors are found, the process will stop here.
+------------------------------------------------------------
+</code></pre>
+<p><strong>Loading and Validating Structure:</strong></p>
+<pre><code>Loading required input sheets...
+All 3 required input sheets found: [&#39;Input Constituents&#39;, &#39;Input Emails&#39;, &#39;Input Donation History&#39;]
+Sheet &#39;Input Constituents&#39; has all required columns
+Sheet &#39;Input Emails&#39; has all required columns
+Sheet &#39;Input Donation History&#39; has all required columns
+</code></pre>
+<p><strong>Loading Data:</strong></p>
+<pre><code>Loaded 150 constituents
+Loaded 250 email records
+Loaded 500 donation records
+Cleaning data (converting nan to None)...
+Data cleaning completed
+</code></pre>
+<p><strong>Validating Records:</strong></p>
+<pre><code>Validating input data with Pydantic models...
+Validated 150 constituent records
+Validated 250 email records
+Validated 500 donation records
+All input data validation passed
+Validation process completed successfully!
+</code></pre>
+<p><strong>Phase 1 Success - Proceeding to Phase 2:</strong></p>
+<pre><code>============================================================
+METADATA VALIDATION PASSED!
+============================================================
+All input data is valid. Proceeding to Vendor transformation...
+============================================================
+</code></pre>
+<p><strong>Data Transformation:</strong></p>
+<pre><code>STEP 2: Loading Data for Vendor Transformation
+Loaded 150 constituents
+Loaded 250 email records
+Loaded 500 donation records
+
+============================================================
+STEP 3: Vendor Data Transformation &amp; Validation
+Cleaning and standardizing input data...
+Data cleaning completed
+Validating Vendor output records...
+</code></pre>
+<p><strong>Validation Results:</strong></p>
+<pre><code>Validation completed with 2 failed records
+Detailed error logs saved to: vendor_transformation_20260109_143022.log
+</code></pre>
+<p><strong>Saving Outputs:</strong></p>
+<pre><code>============================================================
+STEP 4: Saving Vendor Output Files
+Complete Vendor output saved to: Constituent_Unclean_20260109_143022.xlsx
+Clean records only saved to: Constituent_Clean_20260109_143022.xlsx
+Clean file contains 148 valid records out of 150 total
+Tag summary report saved to: Constituent_tag_count_20260109_143022.xlsx
+  - All Records: 8 unique API-mapped tags
+  - Clean Records: 7 unique API-mapped tags
+</code></pre>
+<p><strong>Final Summary:</strong></p>
+<pre><code>============================================================
+FINAL SUMMARY
+Total records processed: 150
+Valid records: 148
+Invalid records: 2
+Validation success rate: 98.67%
+CueBox validation log: vendor_transformation_20260109_143022.log
+Complete output file: Constituent_Unclean_20260109_143022.xlsx
+Clean records file: Constituent_Clean_20260109_143022.xlsx
+Tag summary file: Constituent_tag_count_20260109_143022.xlsx
+</code></pre>
+<p><strong>Email Notification:</strong></p>
+<pre><code>============================================================
+STEP 6: Sending Vendor Results Report
+Validation report sent successfully to recipient@example.com
+   Constituent_Unclean_20260109_143022.xlsx
+   Constituent_Clean_20260109_143022.xlsx
+   Constituent_tag_count_20260109_143022.xlsx
+   vendor_transformation_20260109_143022.log
+
+============================================================
+COMPLETE WORKFLOW FINISHED SUCCESSFULLY!
+============================================================
+</code></pre>
+<h2 is-upgraded>Understanding the Output</h2>
+<p><strong>Success Indicators:</strong></p>
+<ul>
+<li>&#34;METADATA VALIDATION PASSED&#34; confirms Phase 1 success</li>
+<li>&#34;Validation success rate: X%&#34; shows data quality percentage</li>
+<li>&#34;COMPLETE WORKFLOW FINISHED SUCCESSFULLY&#34; means all steps completed</li>
+</ul>
+<p><strong>What the Numbers Mean:</strong></p>
+<ul>
+<li><strong>Total records</strong>: Number of unique constituents in input file</li>
+<li><strong>Valid records</strong>: Records that pass all business rules (ready for Vendor import)</li>
+<li><strong>Invalid records</strong>: Records with validation errors (need manual review)</li>
+<li><strong>Success rate</strong>: Percentage of valid records (aim for &gt;95%)</li>
+</ul>
+<p>Negative : If you see &#34;METADATA VALIDATION FAILED&#34; or &#34;WORKFLOW STOPPED&#34;, check the validation log for specific errors. The email will contain the error details.</p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Output Files" duration="6">
+        <h2 is-upgraded>Understanding Output Scenarios</h2>
+<p>The pipeline generates different outputs based on validation results. Understanding these scenarios helps you quickly identify and resolve issues.</p>
+<h2 is-upgraded>Scenario 1: Metadata Validation Fails (Phase 1)</h2>
+<p><strong>When This Happens:</strong></p>
+<ul>
+<li>Excel file structure is incorrect (missing sheets, wrong sheet names)</li>
+<li>Required columns are missing from sheets</li>
+<li>Critical data type errors in input data</li>
+</ul>
+<p><strong>Generated Files:</strong></p>
+<pre><code>validation_errors_20260109_143022.log
+</code></pre>
+<p><strong>File Contents:</strong></p>
+<p>The metadata validation log contains detailed information about structural issues:</p>
+<pre><code>ERROR - Missing required input sheets: [&#39;Input Emails&#39;]
+ERROR - Sheet &#39;Input Constituents&#39; missing required columns: {&#39;Marital Status&#39;}
+ERROR - INVALID CONSTITUENT RECORD - Row 25
+ERROR - Patron ID: 12345
+ERROR - First Name: John
+ERROR - Primary Email: invalid-email
+ERROR - Validation Error: value is not a valid email address
+ERROR - Full Record: {&#39;Patron ID&#39;: 12345, &#39;First Name&#39;: &#39;John&#39;, ...}
+------------------------------------------------------------
+</code></pre>
+<p><strong>What You Receive:</strong></p>
+<ul>
+<li>Email with subject: &#34;Data Processing Report (Metadata Errors)&#34;</li>
+<li>Attachment: <code>validation_errors_[timestamp].log</code></li>
+<li>No transformation occurs - workflow stopped</li>
+</ul>
+<p><strong>Action Required:</strong></p>
+<ol type="1">
+<li>Review the log file for specific errors</li>
+<li>Fix Excel file structure/data issues</li>
+<li>Re-run the pipeline</li>
+</ol>
+<p>Negative : The workflow STOPS here. No Vendor transformation occurs when Phase 1 fails. Fix the structural issues before proceeding.</p>
+<h2 is-upgraded>Scenario 2: Metadata Passes, Vendor Transformation Completes (Phase 2)</h2>
+<p><strong>When This Happens:</strong></p>
+<ul>
+<li>Excel file structure is correct</li>
+<li>All required columns present</li>
+<li>Basic data types valid</li>
+<li>Transformation completed (with or without some invalid records)</li>
+</ul>
+<p><strong>Generated Files:</strong></p>
+<pre><code>Constituent_Unclean_20260109_143022.xlsx
+Constituent_Clean_20260109_143022.xlsx
+Constituent_tag_count_20260109_143022.xlsx
+vendor_transformation_20260109_143022.log
+</code></pre>
+<h2 is-upgraded>File 1: Constituent Unclean (All Records)</h2>
+<p><strong>Filename Format: </strong><code>Constituent_Unclean_[YYYYMMDD_HHMMSS].xlsx</code></p>
+<p><strong>Purpose:</strong> Complete audit trail of transformation</p>
+<p><strong>Contents:</strong></p>
+<ul>
+<li>ALL transformed records (e.g., 150 records)</li>
+<li>Both valid AND invalid records included</li>
+<li>All Vendor output columns populated</li>
+</ul>
+<p><strong>Column Structure:</strong></p>
+<pre><code>CB Constituent ID | CB Constituent Type | CB First Name | CB Last Name | 
+CB Company Name | CB Created At | CB Email 1 | CB Email 2 | CB Title | 
+CB Tags | CB Background Information | CB Lifetime Donation Amount | 
+CB Most Recent Donation Date | CB Most Recent Donation Amount
+</code></pre>
+<p><strong>Example Valid Record:</strong></p>
+<pre><code>12345 | Person | John | Doe | | 2024-01-15 10:30:00 | john@example.com |
+jdoe@work.com | Dr. | VIP,Donor | Job Title: Professor; Marital Status: Married |
+15000.00 | 2024-12-01 14:20:00 | 5000.00
+</code></pre>
+<p><strong>Example Invalid Record (Missing Last Name):</strong></p>
+<pre><code>12346 | Person | Jane | | | 2024-01-16 09:15:00 | jane@example.com | |
+Ms. | Donor | Job Title: Engineer | 3000.00 | 2024-11-15 11:00:00 | 1000.00
+</code></pre>
+<p><strong>Use Cases:</strong></p>
+<ul>
+<li>Complete data audit and review</li>
+<li>Understanding all transformation results</li>
+<li>Client review before sign-off</li>
+</ul>
+<h2 is-upgraded>File 2: Constituent Clean (Valid Records Only)</h2>
+<p><strong>Filename Format: </strong><code>Constituent_Clean_[YYYYMMDD_HHMMSS].xlsx</code></p>
+<p><strong>Purpose:</strong> Production-ready data for Vendor import</p>
+<p><strong>Contents:</strong></p>
+<ul>
+<li>ONLY valid records (e.g., 148 from 150 total)</li>
+<li>Every record passed all validation rules</li>
+<li>Ready for immediate Vendor import</li>
+</ul>
+<p><strong>Quality Guarantees:</strong></p>
+<ul>
+<li>All Person records have First Name AND Last Name</li>
+<li>All Company records have Company Name</li>
+<li>All emails have valid format</li>
+<li>All timestamps standardized</li>
+<li>All business rules satisfied</li>
+</ul>
+<p>Positive : Import THIS file to Vendor system. It contains only validated, clean records ready for production use.</p>
+<h2 is-upgraded>File 3: Constituent Tag Count</h2>
+<p><strong>Filename Format: </strong><code>Constituent_tag_count_[YYYYMMDD_HHMMSS].xlsx</code></p>
+<p><strong>Purpose:</strong> Show which API tags match your input data and count affected constituents</p>
+<p><strong>How It Works:</strong></p>
+<ol type="1">
+<li>Reads ORIGINAL tags from Input Constituents sheet (before transformation)</li>
+<li>Normalizes and matches them against API&#39;s &#34;name&#34; field</li>
+<li>Counts how many constituents have tags that match the API</li>
+<li>Shows the API&#39;s &#34;mapped_name&#34; with the constituent count</li>
+<li>Provides TWO sheets for comparison</li>
+</ol>
+<p><strong>Excel File Structure:</strong> This file contains <strong>2 sheets</strong>:</p>
+<p><strong>Sheet 1: &#34;All Records&#34;</strong></p>
+<ul>
+<li>Tag counts from ALL constituents in input file</li>
+<li>Includes both valid and invalid records</li>
+<li>Shows complete tag distribution before filtering</li>
+</ul>
+<p><strong>Sheet 2: &#34;Clean Records&#34;</strong></p>
+<ul>
+<li>Tag counts from ONLY valid/clean constituents</li>
+<li>Excludes records that failed validation</li>
+<li>Shows tag distribution in production-ready data</li>
+</ul>
+<p><strong>Contents (Both Sheets):</strong></p>
+<ul>
+<li>CB Tag Name: The standardized tag name from API (mapped_name)</li>
+<li>CB Tag Count: Number of constituents whose original tags matched this API tag</li>
+<li>Sorted by constituent count (descending)</li>
+<li><strong>Only shows tags that exist in the API</strong></li>
+</ul>
+<p><strong>Column Structure (Both Sheets):</strong></p>
+<pre><code>CB Tag Name          | CB Tag Count
+---------------------|-------------
+Major Donor          | 45
+Summer 2016          | 32
+Pitch Perfect        | 28
+Board Member         | 15
+</code></pre>
+<p><strong>Example Comparison:</strong></p>
+<p><em>Sheet 1 - All Records (100 constituents):</em></p>
+<pre><code>CB Tag Name          | CB Tag Count
+---------------------|-------------
+Major Donor          | 45
+Summer 2016          | 32
+Pitch Perfect        | 28
+Board Member         | 15
+</code></pre>
+<p><em>Sheet 2 - Clean Records (78 constituents):</em></p>
+<pre><code>CB Tag Name          | CB Tag Count
+---------------------|-------------
+Major Donor          | 38
+Summer 2016          | 28
+Pitch Perfect        | 25
+Board Member         | 15
+</code></pre>
+<p><strong>Insight:</strong> 7 constituents with &#34;Major Donor&#34; tag failed validation and were excluded from clean records.</p>
+<p><strong>Example:</strong></p>
+<ul>
+<li>Constituent has original tags: <code>"Major Donor 2021, VIP, Summer School 2016"</code></li>
+<li>API has mappings for: &#34;Major Donor 2021&#34; → &#34;Major Donor&#34; and &#34;Summer School 2016&#34; → &#34;Summer 2016&#34;</li>
+<li>This constituent counts toward: &#34;Major Donor&#34; and &#34;Summer 2016&#34;</li>
+<li>&#34;VIP&#34; is ignored (not in API)</li>
+</ul>
+<p><strong>Use Cases:</strong></p>
+<ul>
+<li>See which API-standardized tags are most common</li>
+<li>Understand tag distribution after API mapping</li>
+<li>Verify API mapping coverage</li>
+<li>Identify constituents with specific standardized tags</li>
+</ul>
+<p>Positive : This report shows which of the client&#39;s cleaned, standardized tags (from API) apply to your constituents.</p>
+<h2 is-upgraded>File 4: Vendor Transformation Log</h2>
+<p><strong>Filename Format: </strong><code>vendor_transformation_[YYYYMMDD_HHMMSS].log</code></p>
+<p><strong>Purpose:</strong> Detailed error tracking for invalid records</p>
+<p><strong>Example Log Entry:</strong></p>
+<pre><code>ERROR - VALIDATION FAILED - Record #42
+ERROR - Patron ID: 12346
+ERROR - Constituent Type: Person
+ERROR - Validation Errors:
+ERROR -   - CB Last Name is required when CB Constituent Type is &#39;Person&#39;
+ERROR - Full Record Data:
+ERROR -   CB Constituent ID: 12346
+ERROR -   CB First Name: Jane
+ERROR -   CB Last Name: 
+------------------------------------------------------------
+</code></pre>
+<p><strong>Use Cases:</strong></p>
+<ul>
+<li>Debugging validation failures</li>
+<li>Identifying data quality issues</li>
+<li>Audit trail for compliance</li>
+</ul>
+<h2 is-upgraded>Email Notification</h2>
+<p><strong>Subject:</strong> &#34;Complete Data Processing Report&#34;</p>
+<p><strong>Email Body:</strong></p>
+<pre><code>Vendor Transformation Summary:
+Total records processed: 150
+Valid records: 148
+Invalid records: 2
+Validation success rate: 98.67%
+</code></pre>
+<p><strong>Attachments:</strong></p>
+<ol type="1">
+<li>Constituent_Unclean_[timestamp].xlsx</li>
+<li>Constituent_Clean_[timestamp].xlsx</li>
+<li>Constituent_tag_count_[timestamp].xlsx</li>
+<li>vendor_transformation_[timestamp].log</li>
+</ol>
+<p>Positive : Keep all files for audit purposes. Timestamps ensure complete history of transformation runs.</p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Troubleshooting" duration="4">
+        <h2 is-upgraded>Email Issues</h2>
+<p><strong>Problem</strong>: Email not sending</p>
+<p><strong>Solutions:</strong></p>
+<ol type="1">
+<li>Verify .env file exists in project root</li>
+<li>Check App Password (16 characters, no spaces)</li>
+<li>Ensure 2-Step Verification enabled on Gmail</li>
+<li>Verify SMTP settings</li>
+</ol>
+<p><strong>Problem</strong>: &#34;Authentication failed&#34; error</p>
+<p><strong>Solution</strong>: You&#39;re using regular Gmail password instead of App Password. Create an App Password.</p>
+<h2 is-upgraded>File Path Issues</h2>
+<p><strong>Problem</strong>: &#34;FileNotFoundError: Excel file not found&#34; or Google Drive download errors</p>
+<p><strong>Solutions:</strong></p>
+<ol type="1">
+<li>Ensure the Google Sheet is shared as Anyone with the link</li>
+<li>Confirm <code>GDRIVE_URL</code> includes <code>/spreadsheets/d/&lt;FILE_ID&gt;/</code></li>
+<li>Check file exists and has the <code>.xlsx</code> extension if using a local path</li>
+</ol>
+<h2 is-upgraded>Validation Errors</h2>
+<p><strong>Problem</strong>: &#34;Missing required input sheets&#34;</p>
+<p><strong>Solution</strong>: Check Excel file has these exact sheet names:</p>
+<ul>
+<li>Input Constituents</li>
+<li>Input Emails</li>
+<li>Input Donation History</li>
+</ul>
+<p><strong>Problem</strong>: &#34;Sheet missing required columns&#34;</p>
+<p><strong>Solution</strong>: Column names are case-sensitive! Verify they match exactly.</p>
+<p>Negative : Windows users: Close ALL Excel files before running the pipeline!</p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Project Structure" duration="2">
+        <pre><code>data_engineering_task/
+│
+├── main.py                          # Main entry point
+│   └── Orchestrates workflow
+│       ├── Metadata validation
+│       ├── Conditional execution
+│       └── Email reporting
+│
+├── audit_metadata.py                # Input validation
+│   ├── Pydantic models
+│   ├── Excel structure validation
+│   ├── Data type validation
+│   └── Email configuration
+│
+├── audit_data_fields.py             # Transformation
+│   ├── Data cleaning utilities
+│   ├── Field mapping rules
+│   ├── Vendor transformation logic
+│   └── Output validation
+│
+├── pyproject.toml                   # Dependencies
+├── .env                             # Email config (create this)
+├── README.md                        # Documentation
+│
+├── validation_errors_*.log          # Metadata logs (if errors)
+├── Vendor_transformation_*.log      # Vendor logs
+├── Constituent_Unclean_*.xlsx       # All records (valid + invalid)
+├── Constituent_Clean_*.xlsx         # Valid records only
+└── Constituent_tag_count_*.xlsx     # API-mapped tag statistics
+</code></pre>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Summary" duration="2">
+        <h2 is-upgraded>What You&#39;ve Learned</h2>
+<p>You now understand:</p>
+<ul>
+<li>Two-phase audit architecture for data validation</li>
+<li>Schema drift detection vs business rules validation</li>
+<li>Client data onboarding workflow</li>
+<li>Vendor data transformation process</li>
+<li>Automated email reporting</li>
+<li>Error handling and logging strategies</li>
+</ul>
+<h2 is-upgraded>Key Features</h2>
+<p>Your pipeline can:</p>
+<ul>
+<li>Validate 3 input sheets automatically</li>
+<li>Stop processing if metadata issues found</li>
+<li>Transform valid data to Vendor format</li>
+<li>Separate valid and invalid records</li>
+<li>Send automated reports via email</li>
+<li>Maintain detailed audit logs</li>
+</ul>
+<h2 is-upgraded>Next Steps</h2>
+<ol type="1">
+<li><strong>Test with your data</strong> - Start with a small sample</li>
+<li><strong>Review validation results</strong> - Check logs and outputs</li>
+<li><strong>Customize as needed</strong> - Adjust validation rules</li>
+<li><strong>Deploy to production</strong> - Enable email notifications</li>
+</ol>
+<p>Positive : You&#39;re ready to process production data! Remember to test with sample data first.</p>
+<p>Thank you for completing this codelab! Happy data processing! 🚀</p>
+
+
+      </google-codelab-step>
+    
+  </google-codelab>
+
+  <script src="https://storage.googleapis.com/claat-public/native-shim.js"></script>
+  <script src="https://storage.googleapis.com/claat-public/custom-elements.min.js"></script>
+  <script src="https://storage.googleapis.com/claat-public/prettify.js"></script>
+  <script src="https://storage.googleapis.com/claat-public/codelab-elements.js"></script>
+  <script src="//support.google.com/inapp/api.js"></script>
+
+</body>
+</html>
